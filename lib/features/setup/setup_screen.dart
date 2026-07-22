@@ -2,10 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/database.dart';
+import '../../data/models.dart';
 import '../../data/repositories.dart';
 import '../../logic/palette.dart';
+import '../../logic/recurrence.dart';
 import '../../logic/time_utils.dart';
 import '../common_widgets.dart';
+
+/// A compact recurrence + days descriptor for a fixed appointment list tile.
+String _recurrenceLabel(FixedBlock b) {
+  final summary = recurrenceSummary(
+    type: b.recurrenceType,
+    intervalCount: b.intervalCount,
+    monthlyDay: b.monthlyDay,
+  );
+  if (b.recurrenceType == kRecurWeekly) {
+    if (b.intervalCount == 1) return maskLabel(b.weekdayMask);
+    return '${maskLabel(b.weekdayMask)} · $summary';
+  }
+  return summary;
+}
 
 class SetupScreen extends ConsumerWidget {
   const SetupScreen({super.key});
@@ -117,7 +133,7 @@ class _SetupBody extends ConsumerWidget {
             ),
             title: Text(b.title),
             subtitle: Text(
-              '${maskLabel(b.weekdayMask)}  ·  '
+              '${_recurrenceLabel(b)}  ·  '
               '${formatMinuteOfDay(b.startMinute)}–${formatMinuteOfDay(b.endMinute)}',
             ),
             trailing: IconButton(
@@ -220,6 +236,7 @@ class _AppointmentSheetState extends State<_AppointmentSheet> {
   int _startMinute = 9 * 60;
   int _endMinute = 17 * 60;
   int _colorValue = kWorkColor;
+  int _recurIndex = 1; // Weekly
   String? _error;
 
   @override
@@ -252,10 +269,11 @@ class _AppointmentSheetState extends State<_AppointmentSheet> {
   }
 
   Future<void> _save() async {
+    final option = kRecurrenceOptions[_recurIndex];
     final title = _titleController.text.trim().isEmpty
         ? (_type == 'work' ? 'Work' : 'Appointment')
         : _titleController.text.trim();
-    if (_weekdayMask == 0) {
+    if (option.isWeekly && _weekdayMask == 0) {
       setState(() => _error = 'Pick at least one day.');
       return;
     }
@@ -263,20 +281,28 @@ class _AppointmentSheetState extends State<_AppointmentSheet> {
       setState(() => _error = 'Start and end time can\'t be the same.');
       return;
     }
+    final today = dateOnly(DateTime.now());
     await widget.db.insertFixedBlock(
       title: title,
       type: _type,
-      weekdayMask: _weekdayMask,
+      weekdayMask:
+          option.isWeekly ? _weekdayMask : weekdayMaskForDate(today),
       startMinute: _startMinute,
       endMinute: _endMinute,
       colorValue: _type == 'work' ? kWorkColor : _colorValue,
+      recurrenceType: option.type,
+      intervalCount: option.interval,
+      anchorEpochDay: ordinalDay(today),
+      monthlyDay: today.day,
     );
     if (mounted) Navigator.of(context).pop(true);
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final option = kRecurrenceOptions[_recurIndex];
+    final media = MediaQuery.of(context);
+    final bottomInset = media.viewInsets.bottom + media.padding.bottom;
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
       child: SingleChildScrollView(
@@ -304,21 +330,32 @@ class _AppointmentSheetState extends State<_AppointmentSheet> {
               onSelectionChanged: (s) => setState(() => _type = s.first),
             ),
             const SizedBox(height: 12),
-            const Text('Days'),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 6,
-              children: [
-                for (var w = 1; w <= 7; w++)
-                  FilterChip(
-                    label: Text(kWeekdayShort[w - 1]),
-                    selected: maskHasDay(_weekdayMask, w),
-                    onSelected: (_) =>
-                        setState(() => _weekdayMask = toggleDay(_weekdayMask, w)),
-                  ),
-              ],
+            RecurrenceDropdown(
+              index: _recurIndex,
+              onChanged: (i) => setState(() => _recurIndex = i),
             ),
             const SizedBox(height: 12),
+            if (option.isWeekly) ...[
+              const Text('Days'),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                children: [
+                  for (var w = 1; w <= 7; w++)
+                    FilterChip(
+                      label: Text(kWeekdayShort[w - 1]),
+                      selected: maskHasDay(_weekdayMask, w),
+                      onSelected: (_) => setState(
+                          () => _weekdayMask = toggleDay(_weekdayMask, w)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ] else if (option.type == kRecurMonthly) ...[
+              Text('On day ${DateTime.now().day} of each month',
+                  style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 12),
+            ],
             Row(
               children: [
                 Expanded(

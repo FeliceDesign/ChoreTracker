@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../logic/free_time.dart';
-import '../logic/time_utils.dart';
+import '../logic/recurrence.dart';
 import 'database.dart';
 import 'models.dart';
 
@@ -35,43 +35,53 @@ class WeekData {
     return DayConfig(weekday: weekday, wakeMinute: 7 * 60, bedMinute: 23 * 60);
   }
 
-  /// Computes the free-time breakdown for a given weekday (1..7).
-  FreeTimeResult freeTimeFor(int weekday) {
-    final cfg = configFor(weekday);
+  /// Fixed blocks occurring on [date], sorted by start time.
+  List<FixedBlock> fixedBlocksOnDate(DateTime date) {
+    final list = fixedBlocks
+        .where((b) => occursOn(
+              type: b.recurrenceType,
+              intervalCount: b.intervalCount,
+              weekdayMask: b.weekdayMask,
+              anchorEpochDay: b.anchorEpochDay,
+              monthlyDay: b.monthlyDay,
+              date: date,
+            ))
+        .toList()
+      ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+    return list;
+  }
+
+  /// Scheduled activities occurring on [date], sorted by start time.
+  List<ScheduledActivity> scheduledOnDate(DateTime date) {
+    final list = scheduled
+        .where((s) => occursOn(
+              type: s.recurrenceType,
+              intervalCount: s.intervalCount,
+              weekdayMask: s.weekdayMask,
+              anchorEpochDay: s.anchorEpochDay,
+              monthlyDay: s.monthlyDay,
+              date: date,
+            ))
+        .toList()
+      ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+    return list;
+  }
+
+  /// Computes the free-time breakdown for a specific calendar [date].
+  FreeTimeResult freeTimeForDate(DateTime date) {
+    final cfg = configFor(date.weekday);
     final busy = <TimeInterval>[];
-    for (final b in fixedBlocks) {
-      if (maskHasDay(b.weekdayMask, weekday)) {
-        busy.add(TimeInterval(b.startMinute, b.endMinute));
-      }
+    for (final b in fixedBlocksOnDate(date)) {
+      busy.add(TimeInterval(b.startMinute, b.endMinute));
     }
-    for (final s in scheduled) {
-      if (maskHasDay(s.weekdayMask, weekday)) {
-        busy.add(TimeInterval(s.startMinute, s.startMinute + s.durationMinutes));
-      }
+    for (final s in scheduledOnDate(date)) {
+      busy.add(TimeInterval(s.startMinute, s.startMinute + s.durationMinutes));
     }
     return computeDayFreeTime(
       wakeMinute: cfg.wakeMinute,
       bedMinute: cfg.bedMinute,
       busy: busy,
     );
-  }
-
-  /// Fixed blocks occurring on [weekday], sorted by start time.
-  List<FixedBlock> fixedBlocksOn(int weekday) {
-    final list = fixedBlocks
-        .where((b) => maskHasDay(b.weekdayMask, weekday))
-        .toList()
-      ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
-    return list;
-  }
-
-  /// Scheduled activities occurring on [weekday], sorted by start time.
-  List<ScheduledActivity> scheduledOn(int weekday) {
-    final list = scheduled
-        .where((s) => maskHasDay(s.weekdayMask, weekday))
-        .toList()
-      ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
-    return list;
   }
 }
 

@@ -22,10 +22,32 @@ class AppDatabase {
     final path = p.join(dir, 'choretracker.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  static const String _recurrenceColumns = '''
+        recurrenceType TEXT NOT NULL DEFAULT 'weekly',
+        intervalCount INTEGER NOT NULL DEFAULT 1,
+        anchorEpochDay INTEGER NOT NULL DEFAULT 0,
+        monthlyDay INTEGER NOT NULL DEFAULT 1''';
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      for (final table in ['fixed_blocks', 'scheduled_activities']) {
+        await db.execute(
+            "ALTER TABLE $table ADD COLUMN recurrenceType TEXT NOT NULL DEFAULT 'weekly'");
+        await db.execute(
+            'ALTER TABLE $table ADD COLUMN intervalCount INTEGER NOT NULL DEFAULT 1');
+        await db.execute(
+            'ALTER TABLE $table ADD COLUMN anchorEpochDay INTEGER NOT NULL DEFAULT 0');
+        await db.execute(
+            'ALTER TABLE $table ADD COLUMN monthlyDay INTEGER NOT NULL DEFAULT 1');
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -52,7 +74,8 @@ class AppDatabase {
         weekdayMask INTEGER NOT NULL,
         startMinute INTEGER NOT NULL,
         endMinute INTEGER NOT NULL,
-        colorValue INTEGER NOT NULL
+        colorValue INTEGER NOT NULL,
+        $_recurrenceColumns
       )
     ''');
 
@@ -83,6 +106,7 @@ class AppDatabase {
         startMinute INTEGER NOT NULL,
         durationSeconds INTEGER NOT NULL,
         createdAt INTEGER NOT NULL,
+        $_recurrenceColumns,
         FOREIGN KEY (activityId) REFERENCES activities (id) ON DELETE CASCADE
       )
     ''');
@@ -130,6 +154,10 @@ class AppDatabase {
     required int startMinute,
     required int endMinute,
     required int colorValue,
+    required String recurrenceType,
+    required int intervalCount,
+    required int anchorEpochDay,
+    required int monthlyDay,
   }) async {
     final db = await _database;
     return db.insert('fixed_blocks', {
@@ -139,6 +167,10 @@ class AppDatabase {
       'startMinute': startMinute,
       'endMinute': endMinute,
       'colorValue': colorValue,
+      'recurrenceType': recurrenceType,
+      'intervalCount': intervalCount,
+      'anchorEpochDay': anchorEpochDay,
+      'monthlyDay': monthlyDay,
     });
   }
 
@@ -229,7 +261,9 @@ class AppDatabase {
     final db = await _database;
     final rows = await db.rawQuery('''
       SELECT sc.id, sc.activityId, sc.weekdayMask, sc.startMinute,
-             sc.durationSeconds, a.name AS name, a.colorValue AS colorValue
+             sc.durationSeconds, sc.recurrenceType, sc.intervalCount,
+             sc.anchorEpochDay, sc.monthlyDay,
+             a.name AS name, a.colorValue AS colorValue
       FROM scheduled_activities sc
       JOIN activities a ON a.id = sc.activityId
       ORDER BY sc.startMinute
@@ -242,6 +276,10 @@ class AppDatabase {
     required int weekdayMask,
     required int startMinute,
     required int durationSeconds,
+    required String recurrenceType,
+    required int intervalCount,
+    required int anchorEpochDay,
+    required int monthlyDay,
   }) async {
     final db = await _database;
     return db.insert('scheduled_activities', {
@@ -250,6 +288,10 @@ class AppDatabase {
       'startMinute': startMinute,
       'durationSeconds': durationSeconds,
       'createdAt': DateTime.now().millisecondsSinceEpoch,
+      'recurrenceType': recurrenceType,
+      'intervalCount': intervalCount,
+      'anchorEpochDay': anchorEpochDay,
+      'monthlyDay': monthlyDay,
     });
   }
 

@@ -22,6 +22,24 @@ const List<String> kWeekdayLong = [
   'Sunday',
 ];
 
+const List<String> kMonthShort = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/// Formats a date as e.g. "Jul 22".
+String formatDayMonth(DateTime d) => '${kMonthShort[d.month - 1]} ${d.day}';
+
 /// Returns the bitmask bit for a weekday. Monday = 1..Sunday = 7.
 int weekdayBit(int weekday) => 1 << (weekday - 1);
 

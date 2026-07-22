@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models.dart';
 import '../../data/repositories.dart';
 import '../../logic/free_time.dart';
+import '../../logic/recurrence.dart';
 import '../../logic/time_utils.dart';
 import 'schedule_activity_sheet.dart';
 
@@ -18,26 +19,64 @@ class WeekScreen extends ConsumerStatefulWidget {
 }
 
 class _WeekScreenState extends ConsumerState<WeekScreen> {
-  int _selectedDay = DateTime.now().weekday; // 1..7
+  DateTime _selectedDate = dateOnly(DateTime.now());
+
+  DateTime get _monday => mondayOfWeek(_selectedDate);
+
+  void _shiftWeek(int deltaWeeks) => setState(() =>
+      _selectedDate = dateOnly(_selectedDate.add(Duration(days: 7 * deltaWeeks))));
+
+  void _shiftDay(int delta) => setState(
+      () => _selectedDate = dateOnly(_selectedDate.add(Duration(days: delta))));
 
   @override
   Widget build(BuildContext context) {
     final weekAsync = ref.watch(weekDataProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Week')),
+      appBar: AppBar(
+        title: const Text('Week'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.today),
+            tooltip: 'Go to today',
+            onPressed: () =>
+                setState(() => _selectedDate = dateOnly(DateTime.now())),
+          ),
+        ],
+      ),
       body: weekAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (week) {
+          final monday = _monday;
           return Column(
             children: [
+              _WeekNavBar(
+                monday: monday,
+                onPrev: () => _shiftWeek(-1),
+                onNext: () => _shiftWeek(1),
+              ),
               _WeekOverview(
                 week: week,
-                selectedDay: _selectedDay,
-                onSelect: (d) => setState(() => _selectedDay = d),
+                monday: monday,
+                selectedDate: _selectedDate,
+                onSelect: (d) => setState(() => _selectedDate = d),
               ),
               const Divider(height: 1),
-              Expanded(child: _DayDetail(week: week, day: _selectedDay)),
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragEnd: (details) {
+                    final v = details.primaryVelocity ?? 0;
+                    if (v < -200) {
+                      _shiftDay(1);
+                    } else if (v > 200) {
+                      _shiftDay(-1);
+                    }
+                  },
+                  child: _DayDetail(week: week, date: _selectedDate),
+                ),
+              ),
             ],
           );
         },
@@ -46,33 +85,82 @@ class _WeekScreenState extends ConsumerState<WeekScreen> {
   }
 }
 
-/// Horizontal strip of 7 day cards, each showing that day's total free time.
-class _WeekOverview extends StatelessWidget {
-  const _WeekOverview({
-    required this.week,
-    required this.selectedDay,
-    required this.onSelect,
+/// Week navigation header showing the ISO week number and date range.
+class _WeekNavBar extends StatelessWidget {
+  const _WeekNavBar({
+    required this.monday,
+    required this.onPrev,
+    required this.onNext,
   });
 
-  final WeekData week;
-  final int selectedDay;
-  final ValueChanged<int> onSelect;
+  final DateTime monday;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final sunday = monday.add(const Duration(days: 6));
+    final range = '${formatDayMonth(monday)} – ${formatDayMonth(sunday)}';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: onPrev,
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                Text('KW ${isoWeekNumber(monday)}',
+                    style: theme.textTheme.titleMedium),
+                Text('$range · ${monday.year}',
+                    style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: onNext,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Horizontal strip of 7 day cards, each showing the date and free time.
+class _WeekOverview extends StatelessWidget {
+  const _WeekOverview({
+    required this.week,
+    required this.monday,
+    required this.selectedDate,
+    required this.onSelect,
+  });
+
+  final WeekData week;
+  final DateTime monday;
+  final DateTime selectedDate;
+  final ValueChanged<DateTime> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final today = DateTime.now();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Row(
         children: [
-          for (var d = 1; d <= 7; d++)
+          for (var i = 0; i < 7; i++)
             Expanded(
               child: _DayCard(
-                weekday: d,
-                freeMinutes: week.freeTimeFor(d).freeMinutes,
-                selected: d == selectedDay,
+                date: monday.add(Duration(days: i)),
+                free: week.freeTimeForDate(monday.add(Duration(days: i))),
+                selectedDate: selectedDate,
+                today: today,
                 theme: theme,
-                onTap: () => onSelect(d),
+                onSelect: onSelect,
               ),
             ),
         ],
@@ -83,21 +171,25 @@ class _WeekOverview extends StatelessWidget {
 
 class _DayCard extends StatelessWidget {
   const _DayCard({
-    required this.weekday,
-    required this.freeMinutes,
-    required this.selected,
+    required this.date,
+    required this.free,
+    required this.selectedDate,
+    required this.today,
     required this.theme,
-    required this.onTap,
+    required this.onSelect,
   });
 
-  final int weekday;
-  final int freeMinutes;
-  final bool selected;
+  final DateTime date;
+  final FreeTimeResult free;
+  final DateTime selectedDate;
+  final DateTime today;
   final ThemeData theme;
-  final VoidCallback onTap;
+  final ValueChanged<DateTime> onSelect;
 
   @override
   Widget build(BuildContext context) {
+    final selected = isSameDate(date, selectedDate);
+    final isToday = isSameDate(date, today);
     final bg = selected
         ? theme.colorScheme.primaryContainer
         : theme.colorScheme.surfaceContainerHighest;
@@ -111,29 +203,32 @@ class _DayCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: onTap,
+          onTap: () => onSelect(date),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
             child: Column(
               children: [
                 Text(
-                  kWeekdayShort[weekday - 1],
+                  kWeekdayShort[date.weekday - 1],
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: fg,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
-                  formatMinutes(freeMinutes),
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.labelMedium?.copyWith(
+                  '${date.day}',
+                  style: theme.textTheme.titleSmall?.copyWith(
                     color: fg,
                     fontWeight: FontWeight.w700,
+                    decoration:
+                        isToday ? TextDecoration.underline : TextDecoration.none,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
-                  'free',
+                  formatMinutes(free.freeMinutes),
+                  textAlign: TextAlign.center,
                   style: theme.textTheme.labelSmall?.copyWith(color: fg),
                 ),
               ],
@@ -147,15 +242,15 @@ class _DayCard extends StatelessWidget {
 
 /// Detailed vertical timeline for a single day.
 class _DayDetail extends ConsumerWidget {
-  const _DayDetail({required this.week, required this.day});
+  const _DayDetail({required this.week, required this.date});
 
   final WeekData week;
-  final int day;
+  final DateTime date;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cfg = week.configFor(day);
-    final result = week.freeTimeFor(day);
+    final cfg = week.configFor(date.weekday);
+    final result = week.freeTimeForDate(date);
     final theme = Theme.of(context);
 
     return Column(
@@ -168,7 +263,8 @@ class _DayDetail extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(kWeekdayLong[day - 1], style: theme.textTheme.titleMedium),
+                    Text('${kWeekdayLong[date.weekday - 1]}, ${formatDayMonth(date)}',
+                        style: theme.textTheme.titleMedium),
                     Text(
                       'Awake ${formatMinuteOfDay(cfg.wakeMinute)}–'
                       '${formatMinuteOfDay(cfg.bedMinute)}'
@@ -186,7 +282,7 @@ class _DayDetail extends ConsumerWidget {
                 onPressed: () async {
                   final saved = await showScheduleActivitySheet(
                     context,
-                    defaultDay: day,
+                    date: date,
                     defaultStartMinute: _suggestStart(result, cfg.wakeMinute),
                   );
                   if (saved == true) refreshAllFrom(ref);
@@ -200,7 +296,7 @@ class _DayDetail extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
             child: _Timeline(
               week: week,
-              day: day,
+              date: date,
               config: cfg,
               result: result,
               onScheduledTap: (s) => _onScheduledTap(context, ref, s),
@@ -270,14 +366,14 @@ class _DayDetail extends ConsumerWidget {
 class _Timeline extends StatelessWidget {
   const _Timeline({
     required this.week,
-    required this.day,
+    required this.date,
     required this.config,
     required this.result,
     this.onScheduledTap,
   });
 
   final WeekData week;
-  final int day;
+  final DateTime date;
   final DayConfig config;
   final FreeTimeResult result;
   final void Function(ScheduledActivity)? onScheduledTap;
@@ -361,7 +457,7 @@ class _Timeline extends StatelessWidget {
     }
 
     // Fixed blocks.
-    for (final b in week.fixedBlocksOn(day)) {
+    for (final b in week.fixedBlocksOnDate(date)) {
       final pos = place(b.startMinute, b.endMinute);
       final crosses = b.endMinute < b.startMinute;
       children.add(_eventBlock(
@@ -376,7 +472,7 @@ class _Timeline extends StatelessWidget {
     }
 
     // Scheduled activities (real blocks with the measured length).
-    for (final s in week.scheduledOn(day)) {
+    for (final s in week.scheduledOnDate(date)) {
       final rawEnd = s.startMinute + s.durationMinutes;
       final pos = place(s.startMinute, rawEnd);
       final crosses = rawEnd > 1440;

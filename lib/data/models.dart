@@ -27,6 +27,10 @@ class FixedBlock {
   final int startMinute;
   final int endMinute;
   final int colorValue;
+  final String recurrenceType; // 'once' | 'weekly' | 'monthly'
+  final int intervalCount;
+  final int anchorEpochDay;
+  final int monthlyDay;
 
   const FixedBlock({
     required this.id,
@@ -36,6 +40,10 @@ class FixedBlock {
     required this.startMinute,
     required this.endMinute,
     required this.colorValue,
+    required this.recurrenceType,
+    required this.intervalCount,
+    required this.anchorEpochDay,
+    required this.monthlyDay,
   });
 
   factory FixedBlock.fromMap(Map<String, Object?> m) => FixedBlock(
@@ -46,6 +54,10 @@ class FixedBlock {
         startMinute: m['startMinute'] as int,
         endMinute: m['endMinute'] as int,
         colorValue: m['colorValue'] as int,
+        recurrenceType: (m['recurrenceType'] as String?) ?? 'weekly',
+        intervalCount: (m['intervalCount'] as int?) ?? 1,
+        anchorEpochDay: (m['anchorEpochDay'] as int?) ?? 0,
+        monthlyDay: (m['monthlyDay'] as int?) ?? 1,
       );
 }
 
@@ -117,6 +129,10 @@ class ScheduledActivity {
   final int weekdayMask;
   final int startMinute;
   final int durationSeconds;
+  final String recurrenceType; // 'once' | 'weekly' | 'monthly'
+  final int intervalCount;
+  final int anchorEpochDay;
+  final int monthlyDay;
 
   const ScheduledActivity({
     required this.id,
@@ -126,6 +142,10 @@ class ScheduledActivity {
     required this.weekdayMask,
     required this.startMinute,
     required this.durationSeconds,
+    required this.recurrenceType,
+    required this.intervalCount,
+    required this.anchorEpochDay,
+    required this.monthlyDay,
   });
 
   factory ScheduledActivity.fromMap(Map<String, Object?> m) => ScheduledActivity(
@@ -136,6 +156,10 @@ class ScheduledActivity {
         weekdayMask: m['weekdayMask'] as int,
         startMinute: m['startMinute'] as int,
         durationSeconds: m['durationSeconds'] as int,
+        recurrenceType: (m['recurrenceType'] as String?) ?? 'weekly',
+        intervalCount: (m['intervalCount'] as int?) ?? 1,
+        anchorEpochDay: (m['anchorEpochDay'] as int?) ?? 0,
+        monthlyDay: (m['monthlyDay'] as int?) ?? 1,
       );
 
   int get durationMinutes => (durationSeconds / 60).ceil();

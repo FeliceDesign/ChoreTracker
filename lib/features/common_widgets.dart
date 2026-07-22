@@ -1,6 +1,57 @@
 import 'package:flutter/material.dart';
 
 import '../logic/palette.dart';
+import '../logic/recurrence.dart';
+
+/// A selectable recurrence preset shown in the "Repeats" dropdown.
+class RecurrenceOption {
+  final String label;
+  final String type;
+  final int interval;
+  const RecurrenceOption(this.label, this.type, this.interval);
+
+  bool get isWeekly => type == kRecurWeekly;
+}
+
+const List<RecurrenceOption> kRecurrenceOptions = [
+  RecurrenceOption('Once', kRecurOnce, 1),
+  RecurrenceOption('Weekly', kRecurWeekly, 1),
+  RecurrenceOption('Every 2 weeks', kRecurWeekly, 2),
+  RecurrenceOption('Every 3 weeks', kRecurWeekly, 3),
+  RecurrenceOption('Every 4 weeks', kRecurWeekly, 4),
+  RecurrenceOption('Monthly', kRecurMonthly, 1),
+];
+
+/// Dropdown for choosing a recurrence preset by its index in [kRecurrenceOptions].
+class RecurrenceDropdown extends StatelessWidget {
+  const RecurrenceDropdown({
+    super.key,
+    required this.index,
+    required this.onChanged,
+  });
+
+  final int index;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<int>(
+      value: index,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Repeats',
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        for (var i = 0; i < kRecurrenceOptions.length; i++)
+          DropdownMenuItem(value: i, child: Text(kRecurrenceOptions[i].label)),
+      ],
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+    );
+  }
+}
 
 /// Opens a time picker forced to 24-hour format (no AM/PM) and returns the
 /// chosen time as a minute-of-day, or null if cancelled.
