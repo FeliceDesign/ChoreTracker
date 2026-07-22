@@ -42,6 +42,11 @@ String maskLabel(int mask) {
   return parts.join(', ');
 }
 
+/// The effective bed time in minutes, wrapping past midnight when bed is at or
+/// before wake (e.g. bed 00:00 with wake 09:00 => 24:00 = 1440).
+int effectiveBedMinute(int wakeMinute, int bedMinute) =>
+    bedMinute > wakeMinute ? bedMinute : bedMinute + 1440;
+
 /// Formats a minute-of-day (0..1439) as "HH:mm".
 String formatMinuteOfDay(int minute) {
   final h = (minute ~/ 60) % 24;

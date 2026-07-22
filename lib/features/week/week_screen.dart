@@ -171,7 +171,8 @@ class _DayDetail extends ConsumerWidget {
                     Text(kWeekdayLong[day - 1], style: theme.textTheme.titleMedium),
                     Text(
                       'Awake ${formatMinuteOfDay(cfg.wakeMinute)}–'
-                      '${formatMinuteOfDay(cfg.bedMinute)}  ·  '
+                      '${formatMinuteOfDay(cfg.bedMinute)}'
+                      '${cfg.bedMinute <= cfg.wakeMinute ? ' +1' : ''}  ·  '
                       'Free ${formatMinutes(result.freeMinutes)} '
                       'of ${formatMinutes(result.awakeMinutes)}',
                       style: theme.textTheme.bodySmall,
@@ -211,8 +212,9 @@ class _DayDetail extends ConsumerWidget {
   }
 
   int _suggestStart(FreeTimeResult result, int fallback) {
-    if (result.freeGaps.isNotEmpty) return result.freeGaps.first.start;
-    return fallback;
+    // Free-gap starts can be absolute (past midnight); wrap back to 0..1439.
+    if (result.freeGaps.isNotEmpty) return result.freeGaps.first.start % 1440;
+    return fallback % 1440;
   }
 
   Future<void> _onScheduledTap(
@@ -280,26 +282,42 @@ class _Timeline extends StatelessWidget {
   final FreeTimeResult result;
   final void Function(ScheduledActivity)? onScheduledTap;
 
-  double _y(int minute) => (minute - config.wakeMinute) * _pxPerMinute;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final totalHeight = (config.bedMinute - config.wakeMinute) * _pxPerMinute;
+    final awakeEnd = effectiveBedMinute(config.wakeMinute, config.bedMinute);
+    final totalHeight = (awakeEnd - config.wakeMinute) * _pxPerMinute;
     if (totalHeight <= 0) {
       return const Padding(
         padding: EdgeInsets.all(24),
-        child: Text('Bed time must be after wake time (edit in Setup).'),
+        child: Text('Bed time must differ from wake time (edit in Setup).'),
       );
+    }
+
+    // Places a raw block (0..1439 start/end) into the awake window, applying the
+    // same normalisation as the free-time math and clamping to the window.
+    ({double top, double height}) place(int rawStart, int rawEnd) {
+      var s = rawStart;
+      var e = rawEnd;
+      if (e <= s) e += 1440;
+      if (s < config.wakeMinute) {
+        s += 1440;
+        e += 1440;
+      }
+      final top = (s - config.wakeMinute) * _pxPerMinute;
+      var height = (e - s) * _pxPerMinute;
+      final maxH = totalHeight - top;
+      if (height > maxH) height = maxH;
+      return (top: top, height: height);
     }
 
     final children = <Widget>[];
 
-    // Hour grid lines + labels.
+    // Hour grid lines + labels (may run past 24:00 into the early hours).
     final firstHour = (config.wakeMinute / 60).ceil();
-    final lastHour = (config.bedMinute / 60).floor();
+    final lastHour = (awakeEnd / 60).floor();
     for (var h = firstHour; h <= lastHour; h++) {
-      final y = _y(h * 60);
+      final y = (h * 60 - config.wakeMinute) * _pxPerMinute;
       children.add(Positioned(
         top: y,
         left: _gutterWidth,
@@ -311,18 +329,18 @@ class _Timeline extends StatelessWidget {
         left: 0,
         width: _gutterWidth - 6,
         child: Text(
-          '${h.toString().padLeft(2, '0')}:00',
+          formatMinuteOfDay((h * 60) % 1440),
           textAlign: TextAlign.right,
           style: theme.textTheme.labelSmall,
         ),
       ));
     }
 
-    // Free gaps (drawn first, behind blocks).
+    // Free gaps (drawn first, behind blocks). Gap minutes are already absolute.
     for (final gap in result.freeGaps) {
       if (gap.length < 5) continue;
       children.add(_positionedBlock(
-        top: _y(gap.start),
+        top: (gap.start - config.wakeMinute) * _pxPerMinute,
         height: gap.length * _pxPerMinute,
         color: Colors.green.withAlpha(28),
         borderColor: Colors.green.withAlpha(90),
@@ -344,26 +362,32 @@ class _Timeline extends StatelessWidget {
 
     // Fixed blocks.
     for (final b in week.fixedBlocksOn(day)) {
+      final pos = place(b.startMinute, b.endMinute);
+      final crosses = b.endMinute < b.startMinute;
       children.add(_eventBlock(
-        top: _y(b.startMinute),
-        height: (b.endMinute - b.startMinute) * _pxPerMinute,
+        top: pos.top,
+        height: pos.height,
         color: Color(b.colorValue),
         title: b.title,
         subtitle:
-            '${formatMinuteOfDay(b.startMinute)}–${formatMinuteOfDay(b.endMinute)}',
+            '${formatMinuteOfDay(b.startMinute)}–${formatMinuteOfDay(b.endMinute)}'
+            '${crosses ? ' +1' : ''}',
       ));
     }
 
     // Scheduled activities (real blocks with the measured length).
     for (final s in week.scheduledOn(day)) {
-      final end = s.startMinute + s.durationMinutes;
+      final rawEnd = s.startMinute + s.durationMinutes;
+      final pos = place(s.startMinute, rawEnd);
+      final crosses = rawEnd > 1440;
       children.add(_eventBlock(
-        top: _y(s.startMinute),
-        height: s.durationMinutes * _pxPerMinute,
+        top: pos.top,
+        height: pos.height,
         color: Color(s.colorValue),
         title: s.activityName,
         subtitle:
-            '${formatMinuteOfDay(s.startMinute)}–${formatMinuteOfDay(end)} · ${formatDurationSeconds(s.durationSeconds)}',
+            '${formatMinuteOfDay(s.startMinute)}–${formatMinuteOfDay(rawEnd % 1440)}'
+            '${crosses ? ' +1' : ''} · ${formatDurationSeconds(s.durationSeconds)}',
         icon: Icons.timer,
         onTap: onScheduledTap == null ? null : () => onScheduledTap!(s),
       ));

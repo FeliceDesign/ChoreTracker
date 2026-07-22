@@ -106,3 +106,35 @@ FreeTimeResult computeFreeTime({
     freeGaps: gaps,
   );
 }
+
+/// Computes free time for a day whose awake window and/or busy intervals may
+/// cross midnight.
+///
+/// [busy] intervals use raw minute-of-day values (0..1439). Two normalisation
+/// rules are applied before delegating to [computeFreeTime]:
+///  1. if an interval's end is at/before its start it crosses midnight, so the
+///     end is pushed to the next day (`end + 1440`);
+///  2. if an interval starts before [wakeMinute] it belongs to the post-midnight
+///     tail of the same awake day, so it is shifted forward by a full day.
+///
+/// The awake window itself wraps: a [bedMinute] at/before [wakeMinute] (e.g.
+/// `00:00` or a night owl's `06:00`) is treated as the next day.
+FreeTimeResult computeDayFreeTime({
+  required int wakeMinute,
+  required int bedMinute,
+  required List<TimeInterval> busy,
+}) {
+  final awakeEnd = bedMinute > wakeMinute ? bedMinute : bedMinute + 1440;
+  final shifted = <TimeInterval>[];
+  for (final b in busy) {
+    var s = b.start;
+    var e = b.end;
+    if (e <= s) e += 1440;
+    if (s < wakeMinute) {
+      s += 1440;
+      e += 1440;
+    }
+    shifted.add(TimeInterval(s, e));
+  }
+  return computeFreeTime(awakeStart: wakeMinute, awakeEnd: awakeEnd, busy: shifted);
+}

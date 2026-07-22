@@ -49,9 +49,9 @@ class WeekData {
         busy.add(TimeInterval(s.startMinute, s.startMinute + s.durationMinutes));
       }
     }
-    return computeFreeTime(
-      awakeStart: cfg.wakeMinute,
-      awakeEnd: cfg.bedMinute,
+    return computeDayFreeTime(
+      wakeMinute: cfg.wakeMinute,
+      bedMinute: cfg.bedMinute,
       busy: busy,
     );
   }

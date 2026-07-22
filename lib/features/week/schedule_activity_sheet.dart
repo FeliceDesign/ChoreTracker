@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models.dart';
 import '../../data/repositories.dart';
 import '../../logic/time_utils.dart';
+import '../common_widgets.dart';
 
 /// Shows the "schedule an activity" bottom sheet. Returns true if something was
 /// scheduled so the caller can refresh.
@@ -51,13 +52,9 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   }
 
   Future<void> _pickStart() async {
-    final t = await showTimePicker(
-      context: context,
-      initialTime:
-          TimeOfDay(hour: _startMinute ~/ 60, minute: _startMinute % 60),
-    );
-    if (t == null) return;
-    setState(() => _startMinute = t.hour * 60 + t.minute);
+    final m = await pickMinuteOfDay(context, _startMinute);
+    if (m == null) return;
+    setState(() => _startMinute = m);
   }
 
   Future<void> _save(List<ActivityWithStats> activities) async {

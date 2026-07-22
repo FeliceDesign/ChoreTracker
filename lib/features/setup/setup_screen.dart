@@ -5,6 +5,7 @@ import '../../data/database.dart';
 import '../../data/repositories.dart';
 import '../../logic/palette.dart';
 import '../../logic/time_utils.dart';
+import '../common_widgets.dart';
 
 class SetupScreen extends ConsumerWidget {
   const SetupScreen({super.key});
@@ -28,14 +29,8 @@ class _SetupBody extends ConsumerWidget {
 
   final WeekData week;
 
-  Future<int?> _pickTime(BuildContext context, int initialMinute) async {
-    final t = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: initialMinute ~/ 60, minute: initialMinute % 60),
-    );
-    if (t == null) return null;
-    return t.hour * 60 + t.minute;
-  }
+  Future<int?> _pickTime(BuildContext context, int initialMinute) =>
+      pickMinuteOfDay(context, initialMinute);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -245,13 +240,9 @@ class _AppointmentSheetState extends State<_AppointmentSheet> {
 
   Future<void> _pick(bool isStart) async {
     final initial = isStart ? _startMinute : _endMinute;
-    final t = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: initial ~/ 60, minute: initial % 60),
-    );
-    if (t == null) return;
+    final m = await pickMinuteOfDay(context, initial);
+    if (m == null) return;
     setState(() {
-      final m = t.hour * 60 + t.minute;
       if (isStart) {
         _startMinute = m;
       } else {
@@ -268,8 +259,8 @@ class _AppointmentSheetState extends State<_AppointmentSheet> {
       setState(() => _error = 'Pick at least one day.');
       return;
     }
-    if (_endMinute <= _startMinute) {
-      setState(() => _error = 'End time must be after start time.');
+    if (_endMinute == _startMinute) {
+      setState(() => _error = 'Start and end time can\'t be the same.');
       return;
     }
     await widget.db.insertFixedBlock(
@@ -347,6 +338,14 @@ class _AppointmentSheetState extends State<_AppointmentSheet> {
                 ),
               ],
             ),
+            if (_endMinute < _startMinute) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Crosses midnight — ends next day at '
+                '${formatMinuteOfDay(_endMinute)}.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             if (_type == 'custom') ...[
               const SizedBox(height: 12),
               const Text('Colour'),
