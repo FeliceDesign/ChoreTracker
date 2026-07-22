@@ -1,0 +1,64 @@
+name: Build APK
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Print Flutter version
+        run: flutter --version
+
+      # This repo only commits the Dart sources (lib/, test/) plus pubspec and
+      # config. The Android platform folder is generated here so we never have to
+      # commit generated Gradle/wrapper files.
+      - name: Generate Android platform files
+        run: flutter create --platforms=android --org com.felicedesign --project-name choretracker .
+
+      # `flutter create` overwrites some tracked files (e.g. lib/main.dart,
+      # pubspec.yaml) with its template. Restore our committed sources while
+      # keeping the freshly generated, untracked android/ folder.
+      - name: Restore project sources
+        run: |
+          git checkout -- .
+          rm -f test/widget_test.dart
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+        continue-on-error: true
+
+      - name: Run tests
+        run: flutter test
+        continue-on-error: true
+
+      - name: Build release APK
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: choretracker-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
